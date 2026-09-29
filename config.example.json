@@ -1,0 +1,46 @@
+{
+  "komga": {
+    "base_url": "http://127.0.0.1:25600",
+    "api_key": "填入 Komga 管理员 API key"
+  },
+  "deepseek": {
+    "base_url": "https://api.deepseek.com",
+    "api_key": "sk-填入deepseek的key",
+    "model": "deepseek-flash",
+    "max_tokens": 8000,
+    "temperature": 0.1,
+    "concurrency": 50,
+    "web_alt_concurrency": 8,
+    "timeout_seconds": 120,
+    "max_retries": 2
+  },
+  "bangumi": {
+    "base_url": "https://api.bgm.tv",
+    "user_agent": "komga-bangumi-llm-scraper/1.0 (github.com/RAMU324E/komga-bangumi-llm-scraper)",
+    "requests_per_second": 5.0,
+    "search_top": 6
+  },
+  "target": {
+    "library_name": "日漫"
+  },
+  "match": {
+    "exact_score": 95,
+    "search_floor": 40,
+    "vlm_accept": 85,
+    "vlm_review_floor": 60,
+    "max_candidates": 6,
+    "always_vlm": true,
+    "title_clean_batch": 10,
+    "web_search_alt": true,
+    "web_alt_confidence_floor": 70
+  },
+  "report": {
+    "public_base_url": "https://komga.example.com"
+  },
+  "apply": {
+    "write_covers": false,
+    "lock_written_fields": true,
+    "respect_locked_fields": true,
+    "writes_per_second": 3
+  }
+}
