@@ -3,6 +3,7 @@
 > 只认「文件夹原名 + 第一话原始封面」：Bangumi 检索 + 多模态大模型
 > （**标题 + 封面 + 简介**互相印证）判定，置信度达标才写入，**全程可逆**。
 > 前身是很久之前朋友写的油猴脚本 [dyphire/KomgaBangumi](https://github.com/dyphire/KomgaBangumi)。
+> 模型实测用 DeepSeek：API 可直接联网搜索（细节见「实战经验」），无需另接搜索 MCP。
 
 ## 核心特性
 
