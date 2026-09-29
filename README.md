@@ -1,17 +1,17 @@
 # Komga × Bangumi 自动刮削器（komga-bangumi-llm-scraper）
 
-> 以「文件夹原名 + 第一话原始封面」为真理源：Bangumi 检索 + 多模态大模型
-> （**标题 + 封面 + 简介**三方交叉）裁决，高置信才写入，**全程可逆**。
+> 只认「文件夹原名 + 第一话原始封面」：Bangumi 检索 + 多模态大模型
+> （**标题 + 封面 + 简介**互相印证）判定，置信度达标才写入，**全程可逆**。
 > 前身是很久之前朋友写的油猴脚本 [dyphire/KomgaBangumi](https://github.com/dyphire/KomgaBangumi)。
 
 ## 核心特性
 
 - **判档流水线**：文件夹名清洗 → Bangumi v0 检索（中/日文名、联网补全原名）→ 规则打分
-  → 多模态 VLM 裁决 → A 档直写 / B 档人工审 / C 档保持文件名
+  → 多模态 VLM 判定 → A 档直写 / B 档人工审 / C 档保持文件名
 - **漫画专用纠偏**（自动，无需人工）：
   - 候选剔除**小说条目**；候选全是小说时沿 Bangumi 条目关联自动补**漫画版**
   - 选中**单卷条目**时自动换**系列条目**（沿「系列」关联，找不到则去卷号重搜）
-- **AI 拒绝重试**：置信不足的再问 3 次，≥2 次认定同一条目才采纳，排除偶发波动
+- **AI 拒绝重试**：置信不足的再问 3 次，≥2 次认定同一条目才采纳，排除偶发误判
 - **多版本友好**：同一条目被多个文件夹引用时显示标题带（xx版）后缀，互不覆盖；
   `dup_editions.py` 可对存量库体检并自动补后缀
 - **搜索增强**：文件夹名写入系列别名（label=文件名），Komga 搜索可直接命中文件名
@@ -20,7 +20,7 @@
 - **三层备份**：VACUUM INTO 全库快照 / 逐系列 journal（含 LOCK 标志）/ 元数据表转储，
   单系列可 API 级零停机回滚
 - **全链路缓存**：titles/searches/web_alts/bgm_subjects/bgm_relations/scores/vlm
-  全部落盘，断点续跑秒级出决策
+  全部落盘，断点续跑秒级出结果
 
 ## 快速开始
 
@@ -45,7 +45,7 @@ python3 scraper.py --apply --covers  # 3. 真写 (强制先快照)
 |---|---|
 | `komga.base_url` / `api_key` | Komga 地址与管理员 API key（只写这一个库） |
 | `komga.database_path` | 可选；Komga 的 database.sqlite 路径，用于 apply 后的元数据表转储（备份层③） |
-| `deepseek.*` | 多模态模型（标题清洗、VLM 裁决、联网原名补全） |
+| `deepseek.*` | 多模态模型（标题清洗、VLM 判定、联网原名补全） |
 | `bangumi.*` | base_url / user_agent（建议带联系方式）/ 限速 |
 | `target.library_name` | **库白名单**：只处理这个 library，其他库物理隔离 |
 | `match.*` | 阈值：exact_score=95 / vlm_accept=85 / vlm_review_floor=60 / vlm_retry=3 等 |
@@ -107,7 +107,7 @@ komga-bangumi-llm-scraper/
      → ③ Bangumi 搜索: v0 API (type=1 书籍, 剔除小说), 中/日文名都搜, 全程缓存
      → ④ 规则打分: 标题精确/模糊 + 年份/作者加分
           ├─ 精确命中(≥95) ───────────────→ A 档
-          ├─ 40~94 ──→ ⑤ VLM 裁决 ──→ ≥85 A / 60~84 B(人工审) / <60 C
+          ├─ 40~94 ──→ ⑤ VLM 判定 ──→ ≥85 A / 60~84 B(人工审) / <60 C
           └─ <40 或无候选 ─────────────────→ C 档(保持文件名)
      → ⑥ 归一化: 小说→漫画版, 单卷→系列
      → ⑦ dry-run 报告 → 人工审 → --apply 真写 (快照 + journal + 核对)

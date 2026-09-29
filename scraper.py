@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 Komga × Bangumi 自动刮削器 (日漫库专用)
-真理源: 文件夹原名 + 第一话第1页原图 (不受旧刮削器污染)
-判定:   标题文字 + 封面视觉 + 简介语义 三方交叉, deepseek-flash 多模态裁决
+依据: 文件夹原名 + 第一话第1页原图 (不受旧刮削器污染)
+判定:   标题文字 + 封面视觉 + 简介语义 三方核对, deepseek-flash 多模态判定
 红线:   只碰配置指定的库 / 只写主库 / 无快照不写 / 无journal不写 / 置信度不足不写
 用法:
   python3 scraper.py                      # dry-run (默认, 只读+报告)
@@ -75,7 +75,7 @@ WEB_ALT_PROMPT = """你是漫画数据库查证员。给定一个漫画文件夹
 
 仅输出 JSON: {{"japanese_title": "..." 或 null, "confidence": 0-100, "evidence": "≤40字来源说明"}}"""
 
-VLM_PROMPT_TEMPLATE = """你是资深漫画编辑。任务：判断下列 Bangumi 候选条目中，哪一个与「本地漫画系列」是【同一部作品】。这是元数据刮削的匹配裁决，错配会污染数据库，宁可漏配不可错配。
+VLM_PROMPT_TEMPLATE = """你是资深漫画编辑。任务：判断下列 Bangumi 候选条目中，哪一个与「本地漫画系列」是【同一部作品】。这是元数据刮削的匹配判断，错配会污染数据库，宁可漏配不可错配。
 
 【本地系列】
 - 文件夹名: {folder}
@@ -703,7 +703,7 @@ def phase_score(series_map, titles, searches, subjects, paths):
     return scores
 
 
-# ============================================================ 阶段 5: VLM 裁决 ===
+# ============================================================ 阶段 5: VLM 判定 ===
 
 def vlm_one(ds, bg, sid, item, tinfo, ids, subjects, paths, cfg, per_subject=None):
     max_c = cfg["match"].get("max_candidates", 6)
@@ -769,7 +769,7 @@ def phase_vlm(ds, bg, series_map, titles, searches, subjects, scores, paths, cfg
     todo = [sid for sid in series_map if needs_vlm(sid)
             and (sid not in vlm or "LLM失败" in (vlm[sid].get("reason") or "")  # 调用失败≠否决, 重试
                  or (vlm[sid].get("subject_id") is not None and vlm[sid]["subject_id"] not in subjects))]
-    log(f"VLM 裁决: 待处理 {len(todo)} (缓存 {len(vlm)})  并发={cfg['deepseek'].get('concurrency', 16)}  always_vlm={always}")
+    log(f"VLM 判定: 待处理 {len(todo)} (缓存 {len(vlm)})  并发={cfg['deepseek'].get('concurrency', 16)}  always_vlm={always}")
 
     def work(sid):
         r = vlm_one(ds, bg, sid, series_map[sid], titles.get(sid) or {},
@@ -789,7 +789,7 @@ def phase_vlm(ds, bg, series_map, titles, searches, subjects, scores, paths, cfg
 
 def phase_vlm_retry(ds, bg, series_map, titles, searches, subjects, scores, vlm, paths, cfg, m):
     """AI 拒绝/置信不足 → 再问 N 次 (默认3), ≥多数次认定同一条目(置信≥vlm_accept)才采纳
-    排除偶发波动的拒绝, 同时不让偶发的误通过混进来; 结果记在 vlm[sid]['votes'], 幂等不重复问"""
+    排除偶发的错误拒绝, 同时不让偶发的误通过混进来; 结果记在 vlm[sid]['votes'], 幂等不重复问"""
     n = m.get("vlm_retry", 3)
     if n <= 0:
         return vlm
@@ -873,7 +873,7 @@ def phase_decisions(series_map, titles, searches, subjects, scores, vlm, m):
                 elif v.get("subject_id"):
                     decisions[sid] = {"tier": "B", "subject_id": v["subject_id"], "score": sc["score"],
                                       "confidence": v.get("confidence", 0),
-                                      "reason": f"规则选{sc['subject_id']}但VLM选此候选, 人工裁决", "by": "VLM"}
+                                      "reason": f"规则选{sc['subject_id']}但VLM选此候选, 人工判定", "by": "VLM"}
                 else:
                     decisions[sid] = {"tier": "B", "score": sc["score"], "confidence": v.get("confidence", 0),
                                       "reason": f"精确命中但VLM复核拒绝: {(v.get('reason') or '')[:50]}", "by": "VLM"}

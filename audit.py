@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""三方交叉审计: 记忆alt vs 网证原名 vs 被选bgm条目 + 结构红旗扫描
+"""三方核对审计: 记忆alt vs 网证原名 vs 被选bgm条目 + 结构红旗扫描
 用法: python3 audit.py                       # 只做 alt 对账
       python3 audit.py reports/run_X/decisions.json   # 追加 A 档三方审计"""
 import json, re, difflib, os, sys
