@@ -918,14 +918,15 @@ def write_report(decisions, series_map, titles, subjects, paths, cfg, run_dir):
         for sid, d in rows:
             name = series_map[sid]["name"]
             komga_lnk = f"[系列]({pub}/series/{sid})" if pub else sid
+            done = " ✅已刮过(apply 跳过, 无需再审)" if already_scraped(sid) else ""
             if d.get("subject_id"):
                 sub = subjects.get(d["subject_id"]) or {}
                 nm = sub.get("name_cn") or sub.get("name") or d["subject_id"]
                 bgm_lnk = f"[{nm}](https://bgm.tv/subject/{d['subject_id']})"
                 lines.append(f"- `{sid}` {name} → {bgm_lnk} ({komga_lnk}) 置信{d.get('confidence','?')} 分数{d.get('score','?')} "
-                             f"来源{d.get('by','?')} | {d.get('reason','')}")
+                             f"来源{d.get('by','?')} | {d.get('reason','')}{done}")
             else:
-                lines.append(f"- `{sid}` {name} ({komga_lnk}) | {d.get('reason','')}")
+                lines.append(f"- `{sid}` {name} ({komga_lnk}) | {d.get('reason','')}{done}")
         lines.append("")
     fp = os.path.join(run_dir, "report.md")
     with open(fp, "w", encoding="utf-8") as f:
