@@ -23,24 +23,114 @@
 - **全链路缓存**：titles/searches/web_alts/bgm_subjects/bgm_relations/scores/vlm
   全部落盘，断点续跑秒级出结果
 
-## 快速开始
+## 安装
 
 ```bash
-# 依赖: Python 3.9+
+# Python 3.9+；第三方依赖只有 requests 和 Pillow
 pip install -r requirements.txt
 
-cp config.example.json config.json   # 填入 Komga/DeepSeek key, chmod 600
-python3 scraper.py                   # 1. dry-run (只读, 出报告)
-# 2. 人工审 reports/run_*/report.md：B 档/有候选 C 档里认可的就抄下系列 ID
-python3 scraper.py --apply --covers                    # 3. 真写 A 档 (强制先快照)
-python3 scraper.py --apply --accept ID1,ID2 --covers   #    连人工采纳的一起写
+cp config.example.json config.json
+# 编辑 config.json：
+#   komga.base_url / api_key  → 你的 Komga 地址 + 管理员 API key
+#   deepseek.*                → DeepSeek key（模型需支持图片输入）
+#   bangumi.user_agent        → 建议填项目名+联系方式（bgm 官方建议）
+#   target.library_name       → 只处理这个库（白名单，其他库绝不碰）
+chmod 600 config.json
 ```
 
-常用参数：`--series ID1,ID2` 指定系列；`--exclude ID1,ID2` 强制降 B 档；
-`--accept ID1,ID2` 人工采纳 B 档/有候选 C 档；`--assign 系列:条目` 人工指定 bgm 条目（无候选 C 档的出路）；`--force` 重刮。
+前置：Komga 里已建好目标库、文件夹已扫描入库；想启用元数据表转储（备份层③）
+就把 `komga.database_path` 指向 Komga 的 database.sqlite（不配也能跑，只是少一层备份）。
 
-新系列日常增量：Komga 扫描出新系列 → `python3 scraper.py`（有缓存，只对新系列调 API）
-→ 日志末尾「增量预览」列出将写的系列 → 确认后 `--apply --covers`。
+## 快速上手（3 条命令）
+
+```bash
+python3 scraper.py                   # 1. dry-run：只读，生成报告
+# 2. 打开 reports/run_*/report.md 人工审 B 档
+python3 scraper.py --apply --covers  # 3. 真写（强制先全库快照）
+```
+
+## 使用说明
+
+### 1. 第一次跑全库
+
+`python3 scraper.py` 是 dry-run：只读 Komga、Bangumi、DeepSeek，不改任何数据。
+结束时打印 `决策汇总: A=xx B=xx C=xx`，报告在 `reports/run_<时间戳>/report.md`。
+
+| 档位 | 含义 | apply 时 |
+|---|---|---|
+| A | 标题精确命中，或 VLM 判定置信 ≥85 | 自动写入 |
+| B | 有候选但置信 60~84，或规则与 VLM 意见分歧 | 不写，等人工表态 |
+| C | 无候选或置信 <60 | 不写，保持文件名 |
+
+### 2. 报告怎么读
+
+每行长这样（B 档示例）：
+
+```
+- `0JX1234ABCD` [戀愛寄生蟲][內尾梨花][3完] → [恋爱寄生虫](https://bgm.tv/subject/395077) ([系列](https://komga.example.com/series/0JX1234ABCD)) 置信72 分数58 来源VLM | 译名差异大但封面简介一致 ✅已刮过(apply 跳过, 无需再审)
+```
+
+- 行首反引号里是**系列 ID**，人工干预参数直接抄它；
+- `→ [候选名](bgm链接)` 是机器选中的 Bangumi 条目，点进去可核对；
+- 置信 = VLM 打分，分数 = 规则打分，来源 = 谁做的决定（规则 / VLM / 规则+VLM）；
+- 结尾带 ✅ 表示 journal 里已有记录（写过或人工处理过），apply 自动跳过，不必再审。
+
+### 3. 人工干预（机器拿不准时你说了算）
+
+```bash
+# 不想让某个 A 档写入（审计红旗、你看着不对）
+python3 scraper.py --apply --exclude 0JXX,0JYY
+
+# 审完报告，认可某个 B 档/有候选 C 档 → 升为 A 档一起写
+python3 scraper.py --apply --accept 0JXX,0JYY --covers
+
+# 某系列没匹配上（C 档无候选），你上 bgm.tv 查到正确条目后指定
+python3 scraper.py --apply --assign 0JXX:110731 --covers   # 可逗号分隔多组
+```
+
+- `--accept` 采纳的是“本轮报告里的那个候选”，写入后 journal 记 `by=人工采纳`；
+- `--assign` 的条目 ID 先经 API 验证存在才生效，打错号会拦下并跳过；
+- 人工指定优先级最高，不会被小说→漫画、单卷→系列等自动纠偏改写；
+- 写过之后 journal 判已刮 + 字段加锁，以后 apply 自动跳过，人工结果就是终局。
+
+### 4. 到底会写什么
+
+标题/排序标题、简介、出版社、作者/作画、语言、tags、Bangumi 链接、
+别名（原名 / Bangumi 中文名 / 文件夹名）。写完的字段自动加锁
+（`lock_written_fields`）；你在 Komga 里手动锁过的字段绝不覆盖
+（`respect_locked_fields`）。`--covers` 追加封面：Bangumi 大图经 Pillow
+压缩到 ≤1MB（Komga 限制），并清掉旧的 USER_UPLOADED 缩略图。
+
+### 5. 日常增量（新漫画入库）
+
+Komga 扫描出新文件夹后：`python3 scraper.py` —— 已刮过的系列有缓存和 journal，
+秒级跳过；日志末尾「增量预览」列出本轮将写的系列，确认后 `--apply --covers`。
+
+### 6. 写错了怎么回滚
+
+```bash
+python3 restore.py --run-id 20261005_160913                     # 整轮回滚（API 级，不停机）
+python3 restore.py --run-id 20261005_160913 --series 0JXX,0JYY  # 只回滚指定系列
+python3 restore.py --run-id 20261005_160913 --covers            # 连封面一起还原
+```
+
+三层备份：apply 前强制全库快照（snapshot_db.sh，可整库回退）；每系列 journal
+记录写入前完整元数据；配了 database_path 还会转储元数据表。
+
+### 7. 参数速查
+
+| 参数 | 作用 |
+|---|---|
+| `--series ID1,ID2` | 只处理指定系列 |
+| `--exclude ID1,ID2` | 强制降 B 档不写 |
+| `--accept ID1,ID2` | 人工采纳 B 档/有候选 C 档 |
+| `--assign 系列:条目` | 人工指定 bgm 条目（多组逗号分隔） |
+| `--covers` | apply 时连封面一起写 |
+| `--limit N` | 只跑前 N 个系列（试水用） |
+| `--force` | 已刮过的也重写（锁定字段仍尊重） |
+| `--no-snapshot` | 跳过快照（危险，别用） |
+
+不想再被某个系列打扰：把文件夹名加进 `skip_series.json`，永久跳过。
 
 ## 配置（config.json）
 
