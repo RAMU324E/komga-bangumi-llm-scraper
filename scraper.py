@@ -11,6 +11,8 @@ Komga × Bangumi 自动刮削器 (日漫库专用)
   python3 scraper.py --apply --covers     # 追加封面档
   python3 scraper.py --limit 5            # 只跑前5个系列 (测试)
   python3 scraper.py --series ID1,ID2     # 指定系列
+  python3 scraper.py --apply --accept ID1,ID2   # 人工采纳 B档/有候选C档, 一并写入
+  python3 scraper.py --apply --assign 系列:条目ID  # 人工指定 bgm 条目 (无候选C档的出路)
 """
 import argparse
 import base64
@@ -905,7 +907,8 @@ def write_report(decisions, series_map, titles, subjects, paths, cfg, run_dir):
         return n
 
     lines.append(f"**A 档(自动写入) {stat('A')} · B 档(人工确认) {stat('B')} · C 档(未匹配) {stat('C')} · 合计 {len(decisions)}**\n")
-    for tier, title in (("A", "## A 档 — 将自动写入"), ("B", "## B 档 — 建议人工确认"), ("C", "## C 档 — 未匹配")):
+    for tier, title in (("A", "## A 档 — 将自动写入"), ("B", "## B 档 — 建议人工确认 (认可的抄 ID, 用 --accept 写入)"),
+                        ("C", "## C 档 — 未匹配 (有候选可 --accept; 无候选用 --assign 系列:条目)")):
         lines.append(title)
         lines.append("")
         rows = [(sid, d) for sid, d in decisions.items() if d["tier"] == tier]
@@ -919,10 +922,10 @@ def write_report(decisions, series_map, titles, subjects, paths, cfg, run_dir):
                 sub = subjects.get(d["subject_id"]) or {}
                 nm = sub.get("name_cn") or sub.get("name") or d["subject_id"]
                 bgm_lnk = f"[{nm}](https://bgm.tv/subject/{d['subject_id']})"
-                lines.append(f"- {name} → {bgm_lnk} ({komga_lnk}) 置信{d.get('confidence','?')} 分数{d.get('score','?')} "
+                lines.append(f"- `{sid}` {name} → {bgm_lnk} ({komga_lnk}) 置信{d.get('confidence','?')} 分数{d.get('score','?')} "
                              f"来源{d.get('by','?')} | {d.get('reason','')}")
             else:
-                lines.append(f"- {name} ({komga_lnk}) | {d.get('reason','')}")
+                lines.append(f"- `{sid}` {name} ({komga_lnk}) | {d.get('reason','')}")
         lines.append("")
     fp = os.path.join(run_dir, "report.md")
     with open(fp, "w", encoding="utf-8") as f:
@@ -1108,11 +1111,21 @@ def main():
     ap.add_argument("--limit", type=int, help="只处理前 N 个系列")
     ap.add_argument("--series", type=str, help="指定系列ID, 逗号分隔")
     ap.add_argument("--exclude", type=str, help="强制降为B档的系列ID, 逗号分隔 (审计红旗)")
+    ap.add_argument("--accept", type=str, help="人工采纳的系列ID, 逗号分隔: B档/有候选C档升为A档一并写入")
+    ap.add_argument("--assign", type=str, help="人工指定条目, 格式 系列ID:bgm条目ID, 逗号分隔多组 (无候选C档的出路)")
     ap.add_argument("--no-snapshot", action="store_true", help="跳过快照 (危险)")
     ap.add_argument("--force", action="store_true", help="连已刮过(有 bgm 链接)的系列也重写; 注意已锁定字段仍会跳过")
     args = ap.parse_args()
     args.series = [s.strip() for s in args.series.split(",")] if args.series else None
     args.exclude = [s.strip() for s in args.exclude.split(",")] if args.exclude else None
+    args.accept = [s.strip() for s in args.accept.split(",")] if args.accept else None
+    _assign_raw = args.assign
+    args.assign = {}
+    for _part in filter(None, (_assign_raw or "").split(",")):
+        if ":" not in _part:
+            sys.exit(f"ERROR: --assign 格式应为 系列ID:bgm条目ID, 收到: {_part}")
+        _k, _v = _part.split(":", 1)
+        args.assign[_k.strip()] = _v.strip()
 
     cfg = load_config()
     for d in ("cache", "journal", "reports", "logs"):
@@ -1150,6 +1163,23 @@ def main():
                                   "reason": "审计红旗人工复核: " + (d.get("reason") or "")[:36], "by": "审计降档"}
                 demoted += 1
         log(f"审计排除: {demoted} 个 A 档降为 B 档 (人工复核)")
+    if args.accept:
+        promoted = missed = 0
+        for sid in args.accept:
+            d = decisions.get(sid) or {}
+            if sid not in series_map:
+                log(f"  --accept: {sid} 不在本轮系列, 忽略")
+                missed += 1
+            elif d.get("tier") == "A":
+                continue
+            elif not d.get("subject_id"):
+                log(f"  --accept: {sid} 无候选可采纳, 请改用 --assign 指定条目")
+                missed += 1
+            else:
+                decisions[sid] = dict(d, tier="A", by="人工采纳",
+                                      reason="人工复核采纳: " + (d.get("reason") or "")[:40])
+                promoted += 1
+        log(f"人工采纳: {promoted} 个升为 A 档" + (f", {missed} 个未生效" if missed else ""))
     if m.get("normalize_subject", True):
         fixed_n = fixed_v = 0
         for sid, d in list(decisions.items()):
@@ -1173,6 +1203,24 @@ def main():
                 fixed_v += 1
         if fixed_n or fixed_v:
             log(f"条目归一化: 小说→漫画 {fixed_n}, 单卷→系列 {fixed_v}")
+    # 人工指定条目放在归一化之后: 人给的结论不破自动纠偏改写
+    if args.assign:
+        n_ok = n_bad = 0
+        for sid, bgm_id in args.assign.items():
+            if sid not in series_map:
+                log(f"  --assign: {sid} 不在本轮系列, 忽略")
+                n_bad += 1
+                continue
+            sub = bg.subject(bgm_id, paths["bgm_subjects"])
+            if not sub or not sub.get("id"):
+                log(f"  --assign: bgm 条目 {bgm_id} 不存在或获取失败, 跳过 {sid}")
+                n_bad += 1
+                continue
+            subjects[bgm_id] = sub
+            decisions[sid] = {"tier": "A", "subject_id": bgm_id, "score": None, "confidence": None,
+                              "reason": f"人工指定条目 {bgm_id}", "by": "人工指定"}
+            n_ok += 1
+        log(f"人工指定: {n_ok} 个" + (f", {n_bad} 个未生效" if n_bad else ""))
     run_dir = os.path.join(BASE_DIR, "reports", f"run_{RUN_TS}")
     os.makedirs(run_dir, exist_ok=True)
     write_report(decisions, series_map, titles, subjects, paths, cfg, run_dir)

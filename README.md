@@ -31,11 +31,13 @@ pip install -r requirements.txt
 
 cp config.example.json config.json   # 填入 Komga/DeepSeek key, chmod 600
 python3 scraper.py                   # 1. dry-run (只读, 出报告)
-# 2. 人工审 reports/run_*/report.md 的 B 档区
-python3 scraper.py --apply --covers  # 3. 真写 (强制先快照)
+# 2. 人工审 reports/run_*/report.md：B 档/有候选 C 档里认可的就抄下系列 ID
+python3 scraper.py --apply --covers                    # 3. 真写 A 档 (强制先快照)
+python3 scraper.py --apply --accept ID1,ID2 --covers   #    连人工采纳的一起写
 ```
 
-常用参数：`--series ID1,ID2` 指定系列；`--exclude ID1,ID2` 强制降 B 档；`--force` 重刮。
+常用参数：`--series ID1,ID2` 指定系列；`--exclude ID1,ID2` 强制降 B 档；
+`--accept ID1,ID2` 人工采纳 B 档/有候选 C 档；`--assign 系列:条目` 人工指定 bgm 条目（无候选 C 档的出路）；`--force` 重刮。
 
 新系列日常增量：Komga 扫描出新系列 → `python3 scraper.py`（有缓存，只对新系列调 API）
 → 日志末尾「增量预览」列出将写的系列 → 确认后 `--apply --covers`。
